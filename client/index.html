@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gartic Phone WS</title>
+    <script src="./index.js" defer></script>
+</head>
+<body>
+    <main>
+        <h1>Gartic Phone WS</h1>
+        <p id="connectionStatus">Connecting to websocket...</p>
+
+        <section id="screen-menu">
+            <h2>Menu</h2>
+            <label>
+                Username
+                <input type="text" id="username" placeholder="thomas">
+            </label>
+            <label>
+                Game ID
+                <input type="text" id="gameId" placeholder="ABCD">
+            </label>
+            <p>
+                <button type="button" id="joinGameBtn">Join</button>
+                <button type="button" id="createGameBtn">Create</button>
+            </p>
+        </section>
+
+        <section id="screen-pre-start" hidden>
+            <h2>Pre-start</h2>
+            <p>Game: <span id="lobbyGameId">-</span></p>
+            <ul id="playersList"></ul>
+            <button type="button" id="startGameBtn">Start</button>
+        </section>
+
+        <section id="screen-first-word" hidden>
+            <h2>First word</h2>
+            <p>Give the first word of your thread.</p>
+            <div id="firstWordForm">
+                <input type="text" id="firstWordInput" placeholder="banana wizard">
+                <p>
+                    <button type="button" id="submitFirstWordBtn">Submit word</button>
+                </p>
+            </div>
+            <p id="firstWordWaiting" hidden>Waiting for all players...</p>
+        </section>
+
+        <section id="screen-drawing" hidden>
+            <h2>Drawing</h2>
+            <p>Draw: <strong id="drawingWord">-</strong></p>
+            <p>Time left: <span id="drawingTimer">60</span></p>
+            <p>
+                <label>
+                    Color
+                    <input type="color" id="drawColor" value="#111111">
+                </label>
+                <label>
+                    Thickness
+                    <input type="range" id="drawThickness" min="1" max="16" value="4">
+                </label>
+                <button type="button" id="clearDrawingBtn">Clear</button>
+            </p>
+            <canvas id="drawingCanvas" width="800" height="500"></canvas>
+        </section>
+
+        <section id="screen-naming" hidden>
+            <h2>Naming</h2>
+            <p>Name the drawing you got.</p>
+            <p>Time left: <span id="namingTimer">10</span></p>
+            <canvas id="namingCanvas" width="800" height="500"></canvas>
+            <label>
+                Drawing name
+                <input type="text" id="namingInput" placeholder="sad fish at work">
+            </label>
+            <p>
+                <button type="button" id="submitNamingBtn">Submit name</button>
+            </p>
+            <p id="namingWaiting" hidden>Waiting for next round...</p>
+        </section>
+    </main>
+</body>
+</html>

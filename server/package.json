@@ -1,0 +1,20 @@
+{
+  "name": "server",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@hono/node-server": "^2.0.3",
+    "hono": "^4.12.21",
+    "ws": "^8.20.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.41",
+    "@types/ws": "^8.18.1",
+    "tsx": "^4.7.1",
+    "typescript": "^5.8.3"
+  }
+}

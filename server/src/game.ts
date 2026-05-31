@@ -25,7 +25,7 @@ export class Game {
     private round: number = 1;
     private config = {
         drawDuration: 60000,
-        namingDuration: 10000,
+        namingDuration: 20000,
     }
 
     constructor(gameId: string, host: Player) {
@@ -94,7 +94,7 @@ export class Game {
             this.round++;
         }
         console.log("Game " + this.gameId + " ended");
-        // TODO: show all drawings
+        // TODO: show all drawings, controlled by host
     }
 
     async drawPhase() {

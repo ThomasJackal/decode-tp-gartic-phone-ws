@@ -4,12 +4,78 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Gartic Phone WS</title>
+    <style>
+        .site-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            gap: 1rem;
+            margin-bottom: 0.75rem;
+        }
+
+        .site-header h1 {
+            margin: 0;
+        }
+
+        .site-header p {
+            margin: 0;
+        }
+
+        section h2 {
+            text-align: center;
+        }
+
+        .drawing-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            gap: 1rem;
+            margin-bottom: 0.75rem;
+        }
+
+        .drawing-toolbar {
+            display: flex;
+            gap: 1.5rem;
+            align-items: center;
+            margin-top: 0.75rem;
+        }
+
+        .drawing-canvas-wrap {
+            width: 100%;
+            max-width: 800px;
+        }
+
+        .drawing-canvas {
+            display: block;
+            width: 100%;
+            height: auto;
+            aspect-ratio: 800 / 500;
+            border: 1px solid #000;
+            cursor: crosshair;
+        }
+
+        .view-canvas {
+            cursor: default;
+        }
+
+        .naming-form {
+            display: flex;
+            gap: 0.5rem;
+            align-items: center;
+        }
+
+        .naming-form input {
+            min-width: 12rem;
+        }
+    </style>
     <script src="./index.js" defer></script>
 </head>
 <body>
     <main>
-        <h1>Gartic Phone WS</h1>
-        <p id="connectionStatus">Connecting to websocket...</p>
+        <header class="site-header">
+            <h1>Gartic Phone WS</h1>
+            <p id="connectionStatus">Connecting to websocket...</p>
+        </header>
 
         <section id="screen-menu">
             <h2>Menu</h2>
@@ -42,9 +108,14 @@
 
         <section id="screen-drawing" hidden>
             <h2>Drawing</h2>
-            <p>Draw: <strong id="drawingWord">-</strong></p>
-            <p>Time left: <span id="drawingTimer">60</span></p>
-            <p>
+            <header class="drawing-header">
+                <p class="drawing-prompt">Draw: <strong id="drawingWord">-</strong></p>
+                <p class="drawing-time">Time left: <span id="drawingTimer">60</span>s</p>
+            </header>
+            <div class="drawing-canvas-wrap">
+                <canvas id="drawingCanvas" class="drawing-canvas" width="800" height="500"></canvas>
+            </div>
+            <div id="drawingToolbar" class="drawing-toolbar">
                 <label>
                     Color
                     <input type="color" id="drawColor" value="#111111">
@@ -53,24 +124,20 @@
                     Thickness
                     <input type="range" id="drawThickness" min="1" max="16" value="4">
                 </label>
-                <button type="button" id="clearDrawingBtn">Clear</button>
-            </p>
-            <canvas id="drawingCanvas" width="800" height="500"></canvas>
+            </div>
         </section>
 
         <section id="screen-naming" hidden>
             <h2>Naming</h2>
-            <p>Name the drawing you got.</p>
-            <p>Time left: <span id="namingTimer">10</span></p>
-            <canvas id="namingCanvas" width="800" height="500"></canvas>
-            <label>
-                Drawing name
-                <input type="text" id="namingInput" placeholder="sad fish at work">
-            </label>
-            <p>
-                <button type="button" id="submitNamingBtn">Submit name</button>
-            </p>
-            <p id="namingWaiting" hidden>Waiting for next round...</p>
+            <header class="drawing-header">
+                <div id="namingForm" class="naming-form">
+                    <input type="text" id="namingInput" placeholder="sad fish at work">
+                </div>
+                <p class="drawing-time">Time left: <span id="namingTimer">10</span>s</p>
+            </header>
+            <div class="drawing-canvas-wrap">
+                <canvas id="namingCanvas" class="drawing-canvas view-canvas" width="800" height="500"></canvas>
+            </div>
         </section>
     </main>
 </body>

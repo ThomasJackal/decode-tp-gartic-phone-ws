@@ -15,14 +15,14 @@
 
 import type { WSContext } from "hono/ws";
 import type { DrawingEvent, NamingEvent } from "./dispatcher.js";
-import broadcast, { broadcastTo } from "./utils/broadcast.js";
+import broadcast from "./utils/broadcast.js";
 import wait from "./utils/wait.js";
 
 export class Game {
     public gameId: string;
     private threads: Thread[] = [];
     public players: Player[] = [];
-    private round: number = 0;
+    private round: number = 1;
     private config = {
         drawDuration: 60000,
         namingDuration: 10000,
@@ -84,51 +84,69 @@ export class Game {
     // game loop
     async startGame() {
         console.log("Game " + this.gameId + " started");
-        for (this.round = 0; this.round < this.players.length;) {
-            await this.drawPhase();
+        this.round = 1;
+        while (this.round < this.players.length + 2) {
+            if (this.round % 2 === 1) {
+                await this.drawPhase();
+            } else {
+                await this.namePhase();
+            }
             this.round++;
-            await this.namePhase();
         }
         console.log("Game " + this.gameId + " ended");
-    }
-
-    async namePhase() {
-        for (let threadId = 0; threadId < this.threads.length; threadId++) {
-            const drawing = this.threads[threadId].drawings[this.threads[threadId].drawings.length - 1];
-            broadcastTo(this.players[this.round + threadId % this.players.length], {
-                type: "namingPhase",
-                duration: this.config.namingDuration,
-                drawing: drawing,
-            });
-        }
-        await wait(this.config.namingDuration);
+        // TODO: show all drawings
     }
 
     async drawPhase() {
-        for (let threadId = 0; threadId < this.threads.length; threadId++) {
+        for (let playerId = 0; playerId < this.players.length; playerId++) {
+            const threadId = (playerId + this.round) % this.players.length;
+            const player = this.players[playerId];
             const drawing = new Drawing(this.round);
-            const player = this.players[this.round + threadId % this.players.length];
             drawing.setAuthor(player.username);
 
+            const prompt = this.threads[threadId].getCurrentPrompt();
             this.threads[threadId].drawings.push(drawing);
-            broadcastTo(player, {
+            player.ws.send(JSON.stringify({
                 type: "drawingPhase",
                 duration: this.config.drawDuration,
-                prompt: this.threads[threadId].getCurrentPrompt(),
-            });
-
+                prompt,
+                round: this.round,
+            }));
         }
         await wait(this.config.drawDuration);
     }
 
-    public registerDrawingEvent(event: DrawingEvent) {
-        const thread = this.threads[this.round];
+    public registerDrawingEvent(event: DrawingEvent, ws: WSContext<WebSocket>) {
+        const playerId = this.players.findIndex(p => p.ws === ws);
+        if (playerId === -1) return;
+
+        const threadId = (playerId + this.round) % this.players.length;
+        const thread = this.threads[threadId];
         const drawing = thread.drawings[thread.drawings.length - 1];
         drawing.addEvent(event);
     }
 
-    public registerNamingEvent(event: NamingEvent) {
-        const drawing = this.threads[this.round].drawings[this.threads[this.round].drawings.length - 1];
+    async namePhase() {
+        for (let playerId = 0; playerId < this.players.length; playerId++) {
+            const threadId = (playerId - this.round + this.players.length) % this.players.length;
+            const player = this.players[playerId];
+            const drawing = this.threads[threadId].drawings[this.threads[threadId].drawings.length - 1];
+
+            player.ws.send(JSON.stringify({
+                type: "namingPhase",
+                duration: this.config.namingDuration,
+                drawing,
+            }));
+        }
+        await wait(this.config.namingDuration);
+    }
+
+    public registerNamingEvent(event: NamingEvent, ws: WSContext<WebSocket>) {
+        const playerId = this.players.findIndex(p => p.ws === ws);
+        if (playerId === -1) return;
+
+        const threadId = (playerId - this.round + this.players.length) % this.players.length;
+        const drawing = this.threads[threadId].drawings[this.threads[threadId].drawings.length - 1];
         drawing.setName(event.name);
     }
 }

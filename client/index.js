@@ -17,12 +17,10 @@ document.addEventListener("DOMContentLoaded", () => {
     drawingTimer: document.getElementById("drawingTimer"),
     drawColor: document.getElementById("drawColor"),
     drawThickness: document.getElementById("drawThickness"),
-    clearDrawingBtn: document.getElementById("clearDrawingBtn"),
     namingCanvas: document.getElementById("namingCanvas"),
     namingInput: document.getElementById("namingInput"),
-    submitNamingBtn: document.getElementById("submitNamingBtn"),
+    namingForm: document.getElementById("namingForm"),
     namingTimer: document.getElementById("namingTimer"),
-    namingWaiting: document.getElementById("namingWaiting"),
   };
 
   const screens = {
@@ -35,6 +33,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
   let currentScreen = null;
   let screenState = null;
+  let activeTimer = null;
+  let username = "";
 
   const screenControllers = {
     "menu": {
@@ -61,15 +61,16 @@ document.addEventListener("DOMContentLoaded", () => {
       },
     },
     "drawing": {
-      init({ prompt, duration } = {}) {
+      init({ prompt, duration, round } = {}) {
         const ctx = refs.drawingCanvas.getContext("2d");
         ctx.clearRect(0, 0, refs.drawingCanvas.width, refs.drawingCanvas.height);
         refs.drawingWord.textContent = prompt ?? "-";
-        refs.drawingTimer.textContent = duration ? Math.ceil(duration / 1000) : "60";
         refs.drawColor.value = "#111111";
         refs.drawThickness.value = "4";
+        startCountdown(refs.drawingTimer, duration ?? 60000);
 
         return {
+          round: round ?? 1,
           isDrawing: false,
           lastX: 0,
           lastY: 0,
@@ -83,18 +84,38 @@ document.addEventListener("DOMContentLoaded", () => {
         const ctx = refs.namingCanvas.getContext("2d");
         ctx.clearRect(0, 0, refs.namingCanvas.width, refs.namingCanvas.height);
         refs.namingInput.value = "";
-        refs.namingWaiting.hidden = true;
-        refs.namingTimer.textContent = duration ? Math.ceil(duration / 1000) : "10";
-        if (drawing) {
-          drawCompleteDrawing(ctx, drawing);
+        startCountdown(refs.namingTimer, duration ?? 10000);
+        if (drawing?.events) {
+          drawCompleteDrawing(ctx, drawing.events);
         }
 
-        return {
-          submitted: false,
-        };
+        return {};
       },
     },
   };
+
+  function clearCountdown() {
+    if (activeTimer) {
+      clearInterval(activeTimer);
+      activeTimer = null;
+    }
+  }
+
+  function startCountdown(element, durationMs) {
+    clearCountdown();
+    const endAt = Date.now() + durationMs;
+
+    const tick = () => {
+      const secondsLeft = Math.max(0, Math.ceil((endAt - Date.now()) / 1000));
+      element.textContent = secondsLeft;
+      if (secondsLeft <= 0) {
+        clearCountdown();
+      }
+    };
+
+    tick();
+    activeTimer = setInterval(tick, 250);
+  }
 
   function renderPlayersList(players) {
     refs.playersList.replaceChildren();
@@ -122,6 +143,16 @@ document.addEventListener("DOMContentLoaded", () => {
     refs.firstWordWaiting.hidden = false;
   }
 
+  function sendNaming() {
+    if (currentScreen !== "naming") return;
+
+    ws.send(JSON.stringify({
+      type: "naming",
+      username,
+      name: refs.namingInput.value,
+    }));
+  }
+
   function handleMessage(data) {
     switch (data.type) {
       case "players": {
@@ -140,12 +171,23 @@ document.addEventListener("DOMContentLoaded", () => {
         changeScreen("first-word", { threadId: data.threadId });
         break;
       case "drawingPhase":
-        changeScreen("drawing", { prompt: data.prompt, duration: data.duration });
+        changeScreen("drawing", {
+          prompt: data.prompt,
+          duration: data.duration,
+          round: data.round,
+        });
+        break;
+      case "namingPhase":
+        changeScreen("naming", {
+          drawing: data.drawing,
+          duration: data.duration,
+        });
         break;
     }
   }
 
   function changeScreen(name, options = {}) {
+    clearCountdown();
     Object.values(screens).forEach((screen) => {
       screen.hidden = true;
     });
@@ -170,20 +212,31 @@ document.addEventListener("DOMContentLoaded", () => {
     ctx.stroke();
   }
 
+  function getCanvasPoint(canvas, event) {
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    return {
+      x: (event.clientX - rect.left) * scaleX,
+      y: (event.clientY - rect.top) * scaleY,
+    };
+  }
+
   refs.drawingCanvas.addEventListener("mousedown", (e) => {
     if (currentScreen !== "drawing") return;
     screenState.isDrawing = true;
-    [screenState.lastX, screenState.lastY] = [e.offsetX, e.offsetY];
+    const point = getCanvasPoint(refs.drawingCanvas, e);
+    [screenState.lastX, screenState.lastY] = [point.x, point.y];
   });
 
   refs.drawingCanvas.addEventListener("mousemove", (e) => {
     if (currentScreen !== "drawing" || !screenState.isDrawing) return;
 
-    const x = e.offsetX;
-    const y = e.offsetY;
+    const { x, y } = getCanvasPoint(refs.drawingCanvas, e);
     const ctx = refs.drawingCanvas.getContext("2d");
     const data = {
-      type: "draw",
+      type: "drawing",
+      username,
       color: screenState.color,
       thickness: screenState.thickness,
       fromX: screenState.lastX,
@@ -212,14 +265,8 @@ document.addEventListener("DOMContentLoaded", () => {
     screenState.thickness = Number(refs.drawThickness.value);
   });
 
-  refs.clearDrawingBtn.addEventListener("click", () => {
-    if (currentScreen !== "drawing") return;
-    const ctx = refs.drawingCanvas.getContext("2d");
-    ctx.clearRect(0, 0, refs.drawingCanvas.width, refs.drawingCanvas.height);
-  });
-
   refs.joinGameBtn.addEventListener("click", () => {
-    const username = refs.username.value.trim();
+    username = refs.username.value.trim();
     if (!username) return;
     ws.send(JSON.stringify({ type: "join", username }));
   });
@@ -233,6 +280,8 @@ document.addEventListener("DOMContentLoaded", () => {
   refs.firstWordInput.addEventListener("keydown", (e) => {
     if (e.key === "Enter") submitFirstWord();
   });
+
+  refs.namingInput.addEventListener("input", sendNaming);
 
   ws.addEventListener("open", () => {
     refs.connectionStatus.textContent = "Connected";

@@ -69,11 +69,11 @@ export default function dispatch(payload: any, ws: any = null) {
         }
         case "drawing":
             const drawingEvent = payload as DrawingEvent;
-            game?.registerDrawingEvent(drawingEvent);
+            game?.registerDrawingEvent(drawingEvent, ws as WSContext<WebSocket>);
             break;
         case "naming":
             const namingEvent = payload as NamingEvent;
-            game?.registerNamingEvent(namingEvent);
+            game?.registerNamingEvent(namingEvent, ws as WSContext<WebSocket>);
             break;
         case "startGame":
             game?.initializeGame();

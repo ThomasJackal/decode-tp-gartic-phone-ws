@@ -85,7 +85,7 @@ export class Game {
     async startGame() {
         console.log("Game " + this.gameId + " started");
         this.round = 1;
-        while (this.round < this.players.length + 2) {
+        while (this.round < this.players.length) {
             if (this.round % 2 === 1) {
                 await this.drawPhase();
             } else {

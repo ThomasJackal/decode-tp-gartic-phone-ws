@@ -5,10 +5,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const refs = {
     connectionStatus: document.getElementById("connectionStatus"),
     username: document.getElementById("username"),
-    gameId: document.getElementById("gameId"),
     joinGameBtn: document.getElementById("joinGameBtn"),
-    createGameBtn: document.getElementById("createGameBtn"),
-    lobbyGameId: document.getElementById("lobbyGameId"),
     playersList: document.getElementById("playersList"),
     startGameBtn: document.getElementById("startGameBtn"),
     firstWordInput: document.getElementById("firstWordInput"),
@@ -46,22 +43,19 @@ document.addEventListener("DOMContentLoaded", () => {
       },
     },
     "pre-start": {
-      init({ gameId } = {}) {
-        if (gameId) {
-          refs.lobbyGameId.textContent = gameId;
-        }
-        refs.playersList.replaceChildren();
-        return {
-          gameId: gameId ?? refs.lobbyGameId.textContent,
-        };
+      init({ players = [], isHost = false } = {}) {
+        renderPlayersList(players);
+        refs.startGameBtn.hidden = !isHost;
+        return { players, isHost };
       },
     },
     "first-word": {
-      init() {
+      init({ threadId } = {}) {
         refs.firstWordInput.value = "";
         refs.firstWordForm.hidden = false;
         refs.firstWordWaiting.hidden = true;
         return {
+          threadId,
           submitted: false,
         };
       },
@@ -101,6 +95,55 @@ document.addEventListener("DOMContentLoaded", () => {
       },
     },
   };
+
+  function renderPlayersList(players) {
+    refs.playersList.replaceChildren();
+    players.forEach((name) => {
+      const li = document.createElement("li");
+      li.textContent = name;
+      refs.playersList.appendChild(li);
+    });
+  }
+
+  function submitFirstWord() {
+    if (currentScreen !== "first-word" || screenState.submitted) return;
+
+    const initialWord = refs.firstWordInput.value.trim();
+    if (!initialWord) return;
+
+    ws.send(JSON.stringify({
+      type: "threadReady",
+      threadId: screenState.threadId,
+      initialWord,
+    }));
+
+    screenState.submitted = true;
+    refs.firstWordForm.hidden = true;
+    refs.firstWordWaiting.hidden = false;
+  }
+
+  function handleMessage(data) {
+    switch (data.type) {
+      case "players": {
+        const { players, isHost } = data;
+        if (currentScreen !== "pre-start") {
+          changeScreen("pre-start", { players, isHost });
+        } else {
+          screenState.players = players;
+          screenState.isHost = isHost;
+          renderPlayersList(players);
+          refs.startGameBtn.hidden = !isHost;
+        }
+        break;
+      }
+      case "threadReady":
+        changeScreen("first-word", { threadId: data.threadId });
+        break;
+      case "drawingPhase":
+        changeScreen("drawing", { prompt: data.prompt, duration: data.duration });
+        break;
+    }
+  }
 
   function changeScreen(name, options = {}) {
     Object.values(screens).forEach((screen) => {
@@ -173,6 +216,34 @@ document.addEventListener("DOMContentLoaded", () => {
     if (currentScreen !== "drawing") return;
     const ctx = refs.drawingCanvas.getContext("2d");
     ctx.clearRect(0, 0, refs.drawingCanvas.width, refs.drawingCanvas.height);
+  });
+
+  refs.joinGameBtn.addEventListener("click", () => {
+    const username = refs.username.value.trim();
+    if (!username) return;
+    ws.send(JSON.stringify({ type: "join", username }));
+  });
+
+  refs.startGameBtn.addEventListener("click", () => {
+    ws.send(JSON.stringify({ type: "startGame" }));
+  });
+
+  refs.submitFirstWordBtn.addEventListener("click", submitFirstWord);
+
+  refs.firstWordInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") submitFirstWord();
+  });
+
+  ws.addEventListener("open", () => {
+    refs.connectionStatus.textContent = "Connected";
+  });
+
+  ws.addEventListener("close", () => {
+    refs.connectionStatus.textContent = "Disconnected";
+  });
+
+  ws.addEventListener("message", (event) => {
+    handleMessage(JSON.parse(event.data));
   });
 
   changeScreen("menu");

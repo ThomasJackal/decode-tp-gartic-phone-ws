@@ -49,13 +49,22 @@ export default function dispatch(payload: any, ws: any = null) {
         case "join": {
             const joinEvent = payload as JoinEvent;
             const player = new Player(joinEvent.username, ws as WSContext<WebSocket>);
-
             if (!game) {
                 setGame(new Game("1", player));
             } else {
                 game.join(player);
             }
-
+            break;
+        }
+        case "leave": {
+            const player = game?.players.find(p => p.ws === ws);
+            if (player) {
+                game?.leave(player);
+            }
+            if (game?.players.length === 0) {
+                console.log("Game " + game?.gameId + " destroyed");
+                setGame(null);
+            }
             break;
         }
         case "drawing":

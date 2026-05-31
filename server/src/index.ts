@@ -18,15 +18,15 @@ app.get(
     return {
       onOpen(event, ws) {
         console.log("WebSocket connection opened");
-        console.log(ws);
-        console.log(wss);
       },
       onMessage(event, ws) {
         console.log(`Message from client: ${event.data}`);
         const data = JSON.parse(event.data.toString());
         dispatch(data, ws);
       },
-      onClose: () => {
+      onClose: (event, ws) => {
+        const data = { type: "leave" };
+        dispatch(data, ws);
         console.log("Connection closed");
       },
       onError: () => {

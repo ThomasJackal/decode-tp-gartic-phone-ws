@@ -17,21 +17,15 @@
                 Username
                 <input type="text" id="username" placeholder="thomas">
             </label>
-            <label>
-                Game ID
-                <input type="text" id="gameId" placeholder="ABCD">
-            </label>
             <p>
                 <button type="button" id="joinGameBtn">Join</button>
-                <button type="button" id="createGameBtn">Create</button>
             </p>
         </section>
 
         <section id="screen-pre-start" hidden>
-            <h2>Pre-start</h2>
-            <p>Game: <span id="lobbyGameId">-</span></p>
+            <h2>Lobby</h2>
             <ul id="playersList"></ul>
-            <button type="button" id="startGameBtn">Start</button>
+            <button type="button" id="startGameBtn" hidden>Start</button>
         </section>
 
         <section id="screen-first-word" hidden>

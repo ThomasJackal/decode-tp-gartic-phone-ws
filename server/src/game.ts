@@ -19,7 +19,7 @@ import broadcast, { broadcastTo } from "./utils/broadcast.js";
 import wait from "./utils/wait.js";
 
 export class Game {
-    private gameId: string;
+    public gameId: string;
     private threads: Thread[] = [];
     public players: Player[] = [];
     private round: number = 0;
@@ -30,16 +30,32 @@ export class Game {
 
     constructor(gameId: string, host: Player) {
         this.gameId = gameId;
-        this.players.push(host);
+        console.log("Game " + this.gameId + " created");
 
-        console.log("Game created with id " + this.gameId);
+        this.join(host);
     }
 
     public join(player: Player) {
         this.players.push(player);
 
-        player.ws.send(JSON.stringify({ type: "players", players: this.players.map(player => player.username) }));
-        console.log("Player " + player.username + " joined game with id " + this.gameId);
+        console.log("Player " + player.username + " joined game " + this.gameId);
+        this.sendLobbyPlayers();
+    }
+
+    public leave(player: Player) {
+        this.players = this.players.filter(p => p !== player);
+        console.log("Player " + player.username + " left game " + this.gameId);
+        this.sendLobbyPlayers();
+    }
+
+    private sendLobbyPlayers() {
+        for (const player of this.players) {
+            player.ws.send(JSON.stringify({
+                type: "players",
+                players: this.players.map(p => p.username),
+                isHost: player === this.players[0],
+            }));
+        }
     }
 
     // thread creation

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback, type ChangeEvent } from 'react'
+import { useState, useEffect, useRef, useCallback, type ChangeEvent, type KeyboardEvent } from 'react'
 
 interface DrawingLine {
   type: string
@@ -26,6 +26,9 @@ interface ThreadResult {
 
 type Screen = 'menu' | 'lobby' | 'first-word' | 'drawing' | 'naming' | 'results'
 
+const AVATAR_COLORS = ['#8b5cf6', '#ec4899', '#3b82f6', '#22c55e', '#f59e0b', '#ef4444', '#14b8a6', '#f97316']
+const PRESET_COLORS = ['#111111', '#ef4444', '#f97316', '#eab308', '#22c55e', '#3b82f6', '#8b5cf6', '#ec4899', '#65a30d', '#0891b2']
+
 function drawLine(ctx: CanvasRenderingContext2D, line: DrawingLine) {
   ctx.beginPath()
   ctx.moveTo(line.fromX, line.fromY)
@@ -45,6 +48,35 @@ function getCanvasPoint(canvas: HTMLCanvasElement, clientX: number, clientY: num
   }
 }
 
+function PlayerAvatar({ name, index, size = 'md' }: { name: string; index: number; size?: 'sm' | 'md' }) {
+  const initial = name.charAt(0).toUpperCase()
+  const color = AVATAR_COLORS[index % AVATAR_COLORS.length]
+  const dim = size === 'sm' ? 'w-8 h-8 text-xs' : 'w-10 h-10 text-sm'
+  return (
+    <div
+      className={`${dim} rounded-full flex items-center justify-center text-white font-bold shrink-0`}
+      style={{ backgroundColor: color }}
+      title={name}
+    >
+      {initial}
+    </div>
+  )
+}
+
+function TimerBar({ timer, max }: { timer: number; max: number }) {
+  if (timer <= 0) return null
+  const pct = Math.max(0, (timer / max) * 100)
+  const color = timer > 10 ? '#22c55e' : timer > 5 ? '#f59e0b' : '#ef4444'
+  return (
+    <div className="w-full bg-gray-200 rounded-full h-2.5 mb-3 animate-fadeIn">
+      <div
+        className="h-2.5 rounded-full transition-all duration-300 ease-out"
+        style={{ width: `${pct}%`, backgroundColor: color }}
+      />
+    </div>
+  )
+}
+
 export default function Home() {
   const [screen, setScreen] = useState<Screen>('menu')
   const [inputUsername, setInputUsername] = useState('')
@@ -58,6 +90,7 @@ export default function Home() {
   const [submitted, setSubmitted] = useState(false)
   const [prompt, setPrompt] = useState('')
   const [timer, setTimer] = useState(0)
+  const [timerMax, setTimerMax] = useState(0)
   const [drawingLines, setDrawingLines] = useState<DrawingLine[]>([])
   const [connected, setConnected] = useState(false)
   const [firstWordValue, setFirstWordValue] = useState('')
@@ -92,6 +125,7 @@ export default function Home() {
   const startTimer = useCallback((durationMs: number) => {
     clearTimer()
     timerEndRef.current = Date.now() + durationMs
+    setTimerMax(Math.ceil(durationMs / 1000))
     const tick = () => {
       const secondsLeft = Math.max(0, Math.ceil((timerEndRef.current - Date.now()) / 1000))
       setTimer(secondsLeft)
@@ -322,289 +356,379 @@ export default function Home() {
     wsRef.current?.send(JSON.stringify({ type: 'naming', username, name: e.target.value }))
   }
 
-  function renderResultStep(step: ThreadStep, stepIndex: number) {
+  const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>, action: () => void) => {
+    if (e.key === 'Enter') action()
+  }
+
+  function renderResultStep(step: ThreadStep) {
     switch (step.type) {
       case 'word':
         return (
-          <div className="p-6 bg-gray-50 rounded-lg border text-center">
-            <p className="text-xs text-gray-500 mb-2">Initial word by {step.author}</p>
-            <p className="text-2xl font-bold">{step.content as string}</p>
+          <div className="p-8 bg-white rounded-2xl border border-gray-100 text-center shadow-sm animate-slideUp">
+            <p className="text-sm text-gray-400 mb-2 font-medium">Initial word by {step.author}</p>
+            <p className="text-3xl font-bold text-gray-800" style={{ fontFamily: 'var(--font-fredoka)' }}>
+              &ldquo;{step.content as string}&rdquo;
+            </p>
           </div>
         )
       case 'drawing':
         return (
-          <div>
-            <p className="text-xs text-gray-500 mb-2">Drawing by {step.author}</p>
-            <div className="w-full max-w-[800px]">
+          <div className="animate-slideUp">
+            <p className="text-sm text-gray-400 mb-2 font-medium">Drawing by {step.author}</p>
+            <div className="w-full max-w-[800px] rounded-2xl overflow-hidden shadow-md border border-gray-100 bg-white">
               <canvas
                 ref={resultsCanvasRef}
                 width={800}
                 height={500}
-                className="block w-full h-auto border border-black"
+                className="block w-full h-auto"
               />
             </div>
           </div>
         )
       case 'name':
         return (
-          <div className="p-6 bg-gray-50 rounded-lg border text-center">
-            <p className="text-xs text-gray-500 mb-2">Named by {step.author}</p>
-            <p className="text-xl italic">&ldquo;{step.content as string}&rdquo;</p>
+          <div className="p-8 bg-white rounded-2xl border border-gray-100 text-center shadow-sm animate-slideUp">
+            <p className="text-sm text-gray-400 mb-2 font-medium">Named by {step.author}</p>
+            <p className="text-2xl font-bold text-gray-800 italic" style={{ fontFamily: 'var(--font-fredoka)' }}>
+              &ldquo;{step.content as string}&rdquo;
+            </p>
           </div>
         )
     }
   }
 
   return (
-    <main className="min-h-screen p-4 max-w-3xl mx-auto font-sans">
-      <header className="flex justify-between items-baseline gap-4 mb-3">
-        <h1 className="m-0">Gartic Phone WS</h1>
-        <p className="m-0 text-sm">{connected ? 'Connected' : 'Disconnected'}</p>
-      </header>
+    <main
+      className="min-h-screen flex flex-col"
+      style={{
+        background: 'linear-gradient(135deg, #f5f3ff 0%, #fdf2f8 50%, #eff6ff 100%)',
+        fontFamily: 'var(--font-nunito)',
+      }}
+    >
+      <div className="flex-1 w-full max-w-2xl mx-auto px-4 py-8 flex flex-col">
+        <header className="flex items-center justify-between mb-8">
+          <h1
+            className="text-2xl font-bold text-gray-800 m-0"
+            style={{ fontFamily: 'var(--font-fredoka)' }}
+          >
+            Gartic Phone
+          </h1>
+          <div className="flex items-center gap-2">
+            <span className={`w-2.5 h-2.5 rounded-full ${connected ? 'bg-green-500' : 'bg-red-400'}`} />
+            <span className="text-sm text-gray-400">{connected ? 'Connected' : 'Disconnected'}</span>
+          </div>
+        </header>
 
-      {screen === 'menu' && (
-        <section>
-          <h2 className="text-center mb-4">Menu</h2>
-          {error && <p className="text-red-500 text-sm mb-2">{error}</p>}
-          <label className="block mb-2">
-            Username{' '}
-            <input
-              type="text"
-              value={inputUsername}
-              onChange={(e) => setInputUsername(e.target.value)}
-              placeholder="your name"
-              className="border border-gray-300 px-2 py-1"
-            />
-          </label>
-          <div className="flex gap-4 items-end">
-            <div>
-              <p>
-                <button
-                  onClick={handleCreateRoom}
-                  className="px-3 py-1.5 bg-violet-500 text-white rounded cursor-pointer"
-                >
-                  Create Room
-                </button>
+        {screen === 'menu' && (
+          <section className="bg-white rounded-3xl shadow-lg p-8 animate-fadeIn">
+            <h2
+              className="text-center text-2xl mb-6 text-gray-700"
+              style={{ fontFamily: 'var(--font-fredoka)' }}
+            >
+              Join the game
+            </h2>
+            {error && (
+              <p className="text-red-500 text-sm mb-4 text-center bg-red-50 py-2 px-4 rounded-lg">
+                {error}
               </p>
+            )}
+            <div className="mb-4">
+              <label className="text-sm text-gray-500 font-medium mb-1 block">Your name</label>
+              <input
+                type="text"
+                value={inputUsername}
+                onChange={(e) => setInputUsername(e.target.value)}
+                onKeyDown={(e) => handleKeyDown(e, handleCreateRoom)}
+                placeholder="enter your name"
+                className="w-full border border-gray-200 rounded-xl px-4 py-3 text-gray-700 outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 transition-all"
+              />
             </div>
-            <div className="flex gap-2 items-end">
-              <label>
-                Room code{' '}
+            <div className="flex flex-col gap-3">
+              <button
+                onClick={handleCreateRoom}
+                className="w-full py-3 bg-violet-500 hover:bg-violet-600 text-white rounded-xl font-semibold transition-all shadow-sm active:scale-[0.98] cursor-pointer"
+              >
+                Create Room
+              </button>
+              <div className="flex items-center gap-2">
+                <div className="flex-1 h-px bg-gray-200" />
+                <span className="text-xs text-gray-400 font-medium">OR</span>
+                <div className="flex-1 h-px bg-gray-200" />
+              </div>
+              <div className="flex gap-2">
                 <input
                   type="text"
                   value={roomCodeInput}
-                  onChange={(e) => setRoomCodeInput(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleJoinRoom()}
-                  placeholder="ABC123"
-                  className="border border-gray-300 px-2 py-1 w-24 uppercase"
+                  onChange={(e) => setRoomCodeInput(e.target.value.toUpperCase())}
+                  onKeyDown={(e) => handleKeyDown(e, handleJoinRoom)}
+                  placeholder="ROOM CODE"
+                  className="flex-1 border border-gray-200 rounded-xl px-4 py-3 text-gray-700 uppercase text-center tracking-widest font-semibold outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all"
+                  maxLength={6}
                 />
-              </label>
-              <p>
                 <button
                   onClick={handleJoinRoom}
-                  className="px-3 py-1.5 bg-blue-500 text-white rounded cursor-pointer"
+                  className="px-6 py-3 bg-blue-500 hover:bg-blue-600 text-white rounded-xl font-semibold transition-all shadow-sm active:scale-[0.98] cursor-pointer"
                 >
                   Join
                 </button>
-              </p>
+              </div>
             </div>
-          </div>
-        </section>
-      )}
+          </section>
+        )}
 
-      {screen === 'lobby' && (
-        <section>
-          <h2 className="text-center mb-4">Lobby</h2>
-          <p className="mb-2 text-sm">
-            Room: <strong>{roomCode}</strong>
-            <button
-              onClick={() => navigator.clipboard?.writeText(roomCode)}
-              className="ml-2 text-xs text-blue-500 underline cursor-pointer"
+        {screen === 'lobby' && (
+          <section className="bg-white rounded-3xl shadow-lg p-8 animate-fadeIn">
+            <h2
+              className="text-center text-2xl mb-4 text-gray-700"
+              style={{ fontFamily: 'var(--font-fredoka)' }}
             >
-              Copy
-            </button>
-          </p>
-          <ul id="playersList" className="list-disc pl-5 mb-4">
-            {players.map((name, i) => <li key={i}>{name}</li>)}
-          </ul>
-          {isHost && (
-            <button
-              onClick={handleStartGame}
-              className="px-3 py-1.5 bg-green-500 text-white rounded cursor-pointer"
-            >
-              Start
-            </button>
-          )}
-        </section>
-      )}
+              Lobby
+            </h2>
+            <div className="flex items-center justify-center gap-2 mb-6">
+              <span className="text-sm text-gray-400">Room:</span>
+              <span className="bg-violet-100 text-violet-700 font-bold px-4 py-1.5 rounded-lg text-sm tracking-widest">
+                {roomCode}
+              </span>
+              <button
+                onClick={() => navigator.clipboard?.writeText(roomCode)}
+                className="text-xs text-gray-400 hover:text-violet-500 underline cursor-pointer transition-colors"
+              >
+                Copy
+              </button>
+            </div>
 
-      {screen === 'first-word' && (
-        <section>
-          <h2 className="text-center mb-4">First word</h2>
-          <p className="mb-2">Give the first word of your thread.</p>
-          {!submitted ? (
-            <div>
-              <input
-                type="text"
-                value={firstWordValue}
-                onChange={(e) => setFirstWordValue(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleFirstWordSubmit()}
-                placeholder="banana wizard"
-                className="border border-gray-300 px-2 py-1 mr-2"
-              />
-              <p>
+            <div className="space-y-2 mb-6">
+              {players.map((name, i) => (
+                <div key={i} className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
+                  <PlayerAvatar name={name} index={i} />
+                  <span className="text-gray-700 font-medium">{name}</span>
+                  {i === 0 && (
+                    <span className="ml-auto text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-medium">
+                      Host
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {isHost ? (
+              <button
+                onClick={handleStartGame}
+                className="w-full py-3.5 bg-gradient-to-r from-green-400 to-emerald-500 hover:from-green-500 hover:to-emerald-600 text-white rounded-xl font-bold text-lg transition-all shadow-md active:scale-[0.98] animate-pulse-slow cursor-pointer"
+              >
+                Start Game
+              </button>
+            ) : (
+              <p className="text-center text-gray-400 text-sm animate-pulse-slow">
+                Waiting for host to start the game...
+              </p>
+            )}
+          </section>
+        )}
+
+        {screen === 'first-word' && (
+          <section className="bg-white rounded-3xl shadow-lg p-8 animate-fadeIn text-center">
+            <h2
+              className="text-2xl mb-2 text-gray-700"
+              style={{ fontFamily: 'var(--font-fredoka)' }}
+            >
+              First word
+            </h2>
+            <p className="text-gray-400 mb-6">Give the first word of your thread.</p>
+            {!submitted ? (
+              <div className="max-w-sm mx-auto">
+                <input
+                  type="text"
+                  value={firstWordValue}
+                  onChange={(e) => setFirstWordValue(e.target.value)}
+                  onKeyDown={(e) => handleKeyDown(e, handleFirstWordSubmit)}
+                  placeholder="banana wizard"
+                  className="w-full border border-gray-200 rounded-xl px-4 py-3 text-gray-700 text-center text-lg outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 transition-all"
+                  autoFocus
+                />
                 <button
                   onClick={handleFirstWordSubmit}
-                  className="px-3 py-1.5 bg-blue-500 text-white rounded cursor-pointer"
+                  className="mt-4 w-full py-3 bg-violet-500 hover:bg-violet-600 text-white rounded-xl font-semibold transition-all shadow-sm active:scale-[0.98] cursor-pointer"
                 >
                   Submit word
                 </button>
-              </p>
+              </div>
+            ) : (
+              <div className="py-8">
+                <div className="w-12 h-12 border-4 border-violet-200 border-t-violet-500 rounded-full animate-spin mx-auto mb-4" />
+                <p className="text-gray-400">Waiting for all players...</p>
+              </div>
+            )}
+          </section>
+        )}
+
+        {screen === 'drawing' && (
+          <section className="bg-white rounded-3xl shadow-lg p-6 animate-fadeIn">
+            <div className="flex items-center justify-between mb-3">
+              <h2
+                className="text-xl text-gray-700 m-0"
+                style={{ fontFamily: 'var(--font-fredoka)' }}
+              >
+                Drawing
+              </h2>
             </div>
-          ) : (
-            <p>Waiting for all players...</p>
-          )}
-        </section>
-      )}
-
-      {screen === 'drawing' && (
-        <section>
-          <h2 className="mb-4">Drawing</h2>
-          <header className="flex justify-between items-baseline gap-4 mb-3">
-            <p>
-              Draw: <strong>{prompt}</strong>
+            <TimerBar timer={timer} max={timerMax} />
+            <p className="text-gray-500 mb-3">
+              Draw: <span className="text-gray-800 font-bold">{prompt}</span>
             </p>
-            <p>
-              Time left: <span>{timer}</span>s
-            </p>
-          </header>
-          <div className="w-full max-w-[800px]">
-            <canvas
-              ref={drawingCanvasRef}
-              width={800}
-              height={500}
-              className="block w-full h-auto border border-black cursor-crosshair"
-            />
-          </div>
-          <div className="flex gap-6 items-center mt-3">
-            <label>
-              Color{' '}
-              <input
-                type="color"
-                defaultValue="#111111"
-                onChange={(e) => { colorRef.current = e.target.value }}
-              />
-            </label>
-            <label>
-              Thickness{' '}
-              <input
-                type="range"
-                min={1}
-                max={16}
-                defaultValue={4}
-                onChange={(e) => { thicknessRef.current = Number(e.target.value) }}
-              />
-            </label>
-          </div>
-        </section>
-      )}
-
-      {screen === 'naming' && (
-        <section>
-          <h2 className="mb-4">Naming</h2>
-          <header className="flex justify-between items-baseline gap-4 mb-3">
-            <div className="flex gap-2 items-center">
-              <input
-                type="text"
-                value={namingValue}
-                onChange={handleNamingChange}
-                placeholder="sad fish at work"
-                className="border border-gray-300 px-2 py-1 min-w-48"
+            <div className="w-full max-w-[800px] mx-auto rounded-2xl overflow-hidden shadow-md border border-gray-100 bg-white">
+              <canvas
+                ref={drawingCanvasRef}
+                width={800}
+                height={500}
+                className="block w-full h-auto cursor-crosshair"
               />
             </div>
-            <p>
-              Time left: <span>{timer}</span>s
-            </p>
-          </header>
-          <div className="w-full max-w-[800px]">
-            <canvas
-              ref={namingCanvasRef}
-              width={800}
-              height={500}
-              className="block w-full h-auto border border-black"
+            <div className="flex flex-wrap items-center gap-3 mt-4">
+              <div className="flex gap-1.5">
+                {PRESET_COLORS.map((c) => (
+                  <button
+                    key={c}
+                    onClick={() => { colorRef.current = c }}
+                    className={`w-7 h-7 rounded-full border-2 transition-all cursor-pointer ${
+                      colorRef.current === c ? 'border-gray-400 scale-110' : 'border-transparent'
+                    }`}
+                    style={{ backgroundColor: c }}
+                  />
+                ))}
+                <label className="relative w-7 h-7 rounded-full overflow-hidden border-2 border-dashed border-gray-300 cursor-pointer flex items-center justify-center">
+                  <input
+                    type="color"
+                    defaultValue="#111111"
+                    onChange={(e) => { colorRef.current = e.target.value }}
+                    className="absolute inset-0 opacity-0 w-full h-full cursor-pointer"
+                  />
+                  <span className="text-gray-400 text-xs font-bold">+</span>
+                </label>
+              </div>
+              <div className="flex-1" />
+              <label className="flex items-center gap-2 text-sm text-gray-400">
+                <span>Size</span>
+                <input
+                  type="range"
+                  min={1}
+                  max={16}
+                  defaultValue={4}
+                  onChange={(e) => { thicknessRef.current = Number(e.target.value) }}
+                  className="w-20 accent-violet-500"
+                />
+              </label>
+            </div>
+          </section>
+        )}
+
+        {screen === 'naming' && (
+          <section className="bg-white rounded-3xl shadow-lg p-6 animate-fadeIn">
+            <div className="flex items-center justify-between mb-3">
+              <h2
+                className="text-xl text-gray-700 m-0"
+                style={{ fontFamily: 'var(--font-fredoka)' }}
+              >
+                Naming
+              </h2>
+            </div>
+            <TimerBar timer={timer} max={timerMax} />
+            <div className="w-full max-w-[800px] mx-auto rounded-2xl overflow-hidden shadow-md border border-gray-100 bg-white mb-4">
+              <canvas
+                ref={namingCanvasRef}
+                width={800}
+                height={500}
+                className="block w-full h-auto"
+              />
+            </div>
+            <input
+              type="text"
+              value={namingValue}
+              onChange={handleNamingChange}
+              placeholder="what is this drawing?"
+              className="w-full border border-gray-200 rounded-xl px-4 py-3 text-gray-700 text-center text-lg outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 transition-all"
+              autoFocus
             />
-          </div>
-        </section>
-      )}
+          </section>
+        )}
 
-      {screen === 'results' && gameEndData && (
-        <section>
-          <h2 className="mb-4">Results</h2>
+        {screen === 'results' && gameEndData && (
+          <section className="animate-fadeIn">
+            <h2
+              className="text-2xl text-center mb-6 text-gray-700"
+              style={{ fontFamily: 'var(--font-fredoka)' }}
+            >
+              Results
+            </h2>
 
-          {currentResult && (
-            <div>
-              <p className="mb-2 text-sm text-gray-500">
-                Thread {currentResult.threadIndex + 1} / {gameEndData.threads.length}
-                &nbsp;&mdash;&nbsp;
-                Step {currentResult.stepIndex + 1} / {gameEndData.threads[currentResult.threadIndex].steps.length}
-              </p>
+            {currentResult && (
+              <div>
+                <div className="flex items-center justify-center gap-3 mb-4 text-sm text-gray-400">
+                  <span className="bg-gray-100 px-3 py-1 rounded-full">
+                    Thread {currentResult.threadIndex + 1} / {gameEndData.threads.length}
+                  </span>
+                  <span className="bg-gray-100 px-3 py-1 rounded-full">
+                    Step {currentResult.stepIndex + 1} / {gameEndData.threads[currentResult.threadIndex].steps.length}
+                  </span>
+                </div>
 
-              {renderResultStep(
-                gameEndData.threads[currentResult.threadIndex].steps[currentResult.stepIndex],
-                currentResult.stepIndex,
-              )}
+                {renderResultStep(
+                  gameEndData.threads[currentResult.threadIndex].steps[currentResult.stepIndex],
+                )}
 
-              {isHost && (
-                <p className="mt-4">
+                <div className="mt-6 text-center">
+                  {isHost ? (
+                    <button
+                      onClick={handleNextResult}
+                      className="px-8 py-3 bg-violet-500 hover:bg-violet-600 text-white rounded-xl font-semibold transition-all shadow-sm active:scale-[0.98] cursor-pointer"
+                    >
+                      Next
+                    </button>
+                  ) : (
+                    <p className="text-gray-400 text-sm animate-pulse-slow">Waiting for host to continue...</p>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {!currentResult && !allShown && (
+              <div className="bg-white rounded-3xl shadow-lg p-12 text-center">
+                {isHost ? (
                   <button
                     onClick={handleNextResult}
-                    className="px-4 py-2 bg-green-500 text-white rounded cursor-pointer"
-                  >
-                    Next
-                  </button>
-                </p>
-              )}
-              {!isHost && (
-                <p className="mt-4 text-sm text-gray-500">Waiting for host to continue...</p>
-              )}
-            </div>
-          )}
-
-          {!currentResult && !allShown && (
-            <div>
-              {isHost ? (
-                <p className="mt-4">
-                  <button
-                    onClick={handleNextResult}
-                    className="px-4 py-2 bg-green-500 text-white rounded cursor-pointer"
+                    className="px-8 py-3.5 bg-violet-500 hover:bg-violet-600 text-white rounded-xl font-bold text-lg transition-all shadow-md active:scale-[0.98] cursor-pointer"
                   >
                     Start viewing results
                   </button>
-                </p>
-              ) : (
-                <p>Waiting for host to start viewing results...</p>
-              )}
-            </div>
-          )}
+                ) : (
+                  <>
+                    <div className="w-12 h-12 border-4 border-violet-200 border-t-violet-500 rounded-full animate-spin mx-auto mb-4" />
+                    <p className="text-gray-400">Waiting for host to start viewing results...</p>
+                  </>
+                )}
+              </div>
+            )}
 
-          {allShown && (
-            <div className="text-center">
-              <p className="text-lg mb-4">All results shown!</p>
-              {isHost && (
-                <button
-                  onClick={handleRestartGame}
-                  className="px-4 py-2 bg-blue-500 text-white rounded cursor-pointer"
-                >
-                  Play Again
-                </button>
-              )}
-              {!isHost && (
-                <p className="text-sm text-gray-500">Waiting for host to start a new game...</p>
-              )}
-            </div>
-          )}
-        </section>
-      )}
+            {allShown && (
+              <div className="bg-white rounded-3xl shadow-lg p-12 text-center animate-slideUp">
+                <p className="text-xl text-gray-700 mb-6" style={{ fontFamily: 'var(--font-fredoka)' }}>
+                  All results shown!
+                </p>
+                {isHost ? (
+                  <button
+                    onClick={handleRestartGame}
+                    className="px-8 py-3 bg-blue-500 hover:bg-blue-600 text-white rounded-xl font-semibold transition-all shadow-sm active:scale-[0.98] cursor-pointer"
+                  >
+                    Play Again
+                  </button>
+                ) : (
+                  <p className="text-gray-400 text-sm animate-pulse-slow">Waiting for host to start a new game...</p>
+                )}
+              </div>
+            )}
+          </section>
+        )}
+      </div>
     </main>
   )
 }

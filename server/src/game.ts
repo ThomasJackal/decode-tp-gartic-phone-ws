@@ -23,7 +23,7 @@ export class Game {
         namingDuration: 20000,
     };
     private resultState: { currentThread: number; currentStep: number } | null = null;
-    private currentPhase: "lobby" | "initial" | "drawing" | "naming" | "results" = "lobby";
+    public currentPhase: "lobby" | "initial" | "drawing" | "naming" | "results" = "lobby";
     private static readonly MAX_DRAWING_EVENTS = 5000;
     private static readonly CANVAS_WIDTH = 800;
     private static readonly CANVAS_HEIGHT = 500;
@@ -54,8 +54,20 @@ export class Game {
                 type: "players",
                 players: this.players.map(p => p.username),
                 isHost: player === this.players[0],
+                drawDuration: this.config.drawDuration,
+                namingDuration: this.config.namingDuration,
             }));
         }
+    }
+
+    public updateSettings(settings: { drawDuration?: number; namingDuration?: number }): void {
+        if (settings.drawDuration !== undefined) this.config.drawDuration = settings.drawDuration;
+        if (settings.namingDuration !== undefined) this.config.namingDuration = settings.namingDuration;
+        this.broadcastToPlayers({
+            type: "settingsUpdated",
+            drawDuration: this.config.drawDuration,
+            namingDuration: this.config.namingDuration,
+        });
     }
 
     async initializeGame() {

@@ -26,6 +26,13 @@ export const DrawingEventSchema = z.object({
     toY: z.number().finite(),
 });
 
+export const SettingsSchema = z.object({
+    drawDuration: z.number().int().min(30000).max(300000).optional(),
+    namingDuration: z.number().int().min(10000).max(120000).optional(),
+}).refine(obj => obj.drawDuration !== undefined || obj.namingDuration !== undefined, {
+    message: "At least one setting must be provided",
+});
+
 export const NamingEventSchema = z.object({
     type: z.literal("naming"),
     name: z.string().min(1).max(100),

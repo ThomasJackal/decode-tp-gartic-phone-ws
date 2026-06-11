@@ -95,6 +95,7 @@ export default function Home() {
   const [connected, setConnected] = useState(false)
   const [firstWordValue, setFirstWordValue] = useState('')
   const [namingValue, setNamingValue] = useState('')
+  const [currentColor, setCurrentColor] = useState('#111111')
 
   const wsRef = useRef<WebSocket | null>(null)
   const drawingCanvasRef = useRef<HTMLCanvasElement>(null)
@@ -108,6 +109,8 @@ export default function Home() {
   const thicknessRef = useRef(4)
   const timerEndRef = useRef(0)
 
+  const [drawDuration, setDrawDuration] = useState(60000)
+  const [namingDuration, setNamingDuration] = useState(20000)
   const [gameEndData, setGameEndData] = useState<{ threads: ThreadResult[] } | null>(null)
   const [currentResult, setCurrentResult] = useState<{ threadIndex: number; stepIndex: number } | null>(null)
   const [allShown, setAllShown] = useState(false)
@@ -144,6 +147,8 @@ export default function Home() {
         const host = data.isHost as boolean
         setPlayers(p)
         setIsHost(host)
+        setDrawDuration(data.drawDuration as number ?? 60000)
+        setNamingDuration(data.namingDuration as number ?? 20000)
         setGameEndData(null)
         setCurrentResult(null)
         setAllShown(false)
@@ -164,6 +169,7 @@ export default function Home() {
           canvas.getContext('2d')?.clearRect(0, 0, canvas.width, canvas.height)
         }
         colorRef.current = '#111111'
+        setCurrentColor('#111111')
         thicknessRef.current = 4
         setScreen('drawing')
         startTimer(data.duration as number)
@@ -209,6 +215,16 @@ export default function Home() {
       }
       case 'roomCreated': {
         setRoomCode(data.roomCode as string)
+        break
+      }
+      case 'settingsUpdated': {
+        setDrawDuration(data.drawDuration as number)
+        setNamingDuration(data.namingDuration as number)
+        break
+      }
+      case 'kicked': {
+        setError('You have been kicked from the room')
+        setScreen('menu')
         break
       }
       case 'error': {
@@ -349,6 +365,14 @@ export default function Home() {
 
   const handleRestartGame = () => {
     wsRef.current?.send(JSON.stringify({ type: 'restartGame' }))
+  }
+
+  const handleSettingChange = (key: string, value: number) => {
+    wsRef.current?.send(JSON.stringify({ type: 'updateSettings', [key]: value }))
+  }
+
+  const handleKickPlayer = (username: string) => {
+    wsRef.current?.send(JSON.stringify({ type: 'kickPlayer', username }))
   }
 
   const handleNamingChange = (e: ChangeEvent<HTMLInputElement>) => {
@@ -502,13 +526,73 @@ export default function Home() {
                 <div key={i} className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
                   <PlayerAvatar name={name} index={i} />
                   <span className="text-gray-700 font-medium">{name}</span>
-                  {i === 0 && (
+                  {i === 0 ? (
                     <span className="ml-auto text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-medium">
                       Host
                     </span>
-                  )}
+                  ) : isHost ? (
+                    <button
+                      onClick={() => handleKickPlayer(name)}
+                      className="ml-auto text-xs bg-red-100 text-red-500 hover:bg-red-200 hover:text-red-700 px-2.5 py-0.5 rounded-full font-medium cursor-pointer transition-colors"
+                    >
+                      Kick
+                    </button>
+                  ) : null}
                 </div>
               ))}
+            </div>
+
+            <div className="p-4 bg-gray-50 rounded-2xl mb-6">
+              <h3 className="font-semibold text-gray-700 mb-3 text-sm" style={{ fontFamily: 'var(--font-fredoka)' }}>
+                Settings
+              </h3>
+              {isHost ? (
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-xs text-gray-400 flex justify-between">
+                      <span>Drawing timer</span>
+                      <span className="font-medium text-gray-600">{drawDuration / 1000}s</span>
+                    </label>
+                    <input
+                      type="range"
+                      min={30}
+                      max={180}
+                      step={10}
+                      value={drawDuration / 1000}
+                      onChange={(e) => handleSettingChange('drawDuration', Number(e.target.value) * 1000)}
+                      className="w-full accent-violet-500"
+                    />
+                    <div className="flex justify-between text-[10px] text-gray-300">
+                      <span>30s</span>
+                      <span>180s</span>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-400 flex justify-between">
+                      <span>Naming timer</span>
+                      <span className="font-medium text-gray-600">{namingDuration / 1000}s</span>
+                    </label>
+                    <input
+                      type="range"
+                      min={10}
+                      max={90}
+                      step={10}
+                      value={namingDuration / 1000}
+                      onChange={(e) => handleSettingChange('namingDuration', Number(e.target.value) * 1000)}
+                      className="w-full accent-violet-500"
+                    />
+                    <div className="flex justify-between text-[10px] text-gray-300">
+                      <span>10s</span>
+                      <span>90s</span>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-1 text-sm text-gray-500">
+                  <p>Drawing: <span className="font-medium text-gray-700">{drawDuration / 1000}s</span></p>
+                  <p>Naming: <span className="font-medium text-gray-700">{namingDuration / 1000}s</span></p>
+                </div>
+              )}
             </div>
 
             {isHost ? (
@@ -589,9 +673,9 @@ export default function Home() {
                 {PRESET_COLORS.map((c) => (
                   <button
                     key={c}
-                    onClick={() => { colorRef.current = c }}
+                    onClick={() => { colorRef.current = c; setCurrentColor(c) }}
                     className={`w-7 h-7 rounded-full border-2 transition-all cursor-pointer ${
-                      colorRef.current === c ? 'border-gray-400 scale-110' : 'border-transparent'
+                      currentColor === c ? 'border-gray-400 scale-110' : 'border-transparent'
                     }`}
                     style={{ backgroundColor: c }}
                   />
@@ -599,8 +683,8 @@ export default function Home() {
                 <label className="relative w-7 h-7 rounded-full overflow-hidden border-2 border-dashed border-gray-300 cursor-pointer flex items-center justify-center">
                   <input
                     type="color"
-                    defaultValue="#111111"
-                    onChange={(e) => { colorRef.current = e.target.value }}
+                    value={currentColor}
+                    onChange={(e) => { colorRef.current = e.target.value; setCurrentColor(e.target.value) }}
                     className="absolute inset-0 opacity-0 w-full h-full cursor-pointer"
                   />
                   <span className="text-gray-400 text-xs font-bold">+</span>

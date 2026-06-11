@@ -9,6 +9,7 @@ import {
     RoomCodeSchema,
     DrawingEventSchema,
     NamingEventSchema,
+    SettingsSchema,
 } from "./validation.js";
 
 export interface DrawingEvent {
@@ -134,6 +135,40 @@ export default function dispatch(payload: any, ws: any = null) {
             if (!game) return;
             if (!isHost(game, ws)) { sendError(ws, "Only the host can restart"); return; }
             game.restartGame();
+            break;
+        }
+        case "updateSettings": {
+            const game = gameRepository.getGameByWs(ws);
+            if (!game) return;
+            if (!isHost(game, ws)) { sendError(ws, "Only the host can change settings"); return; }
+            if (game.currentPhase !== "lobby") { sendError(ws, "Cannot change settings during a game"); return; }
+            const v = validate(SettingsSchema, payload);
+            if (!v.ok) { sendError(ws, v.error); return; }
+            game.updateSettings(v.data);
+            break;
+        }
+        case "kickPlayer": {
+            const game = gameRepository.getGameByWs(ws);
+            if (!game) return;
+            if (!isHost(game, ws)) { sendError(ws, "Only the host can kick players"); return; }
+            if (game.currentPhase !== "lobby") { sendError(ws, "Cannot kick players during a game"); return; }
+            const targetUsername = payload.username;
+            if (!targetUsername || typeof targetUsername !== "string") {
+                sendError(ws, "Invalid username");
+                return;
+            }
+            if (targetUsername === game.players[0]?.username) {
+                sendError(ws, "Cannot kick yourself");
+                return;
+            }
+            const target = game.players.find(p => p.username === targetUsername);
+            if (!target) {
+                sendError(ws, "Player not found");
+                return;
+            }
+            try { target.ws.send(JSON.stringify({ type: "kicked" })); } catch { /* ignore */ }
+            try { (target.ws as any).close?.(); } catch { /* ignore */ }
+            gameRepository.removePlayer(target.ws);
             break;
         }
     }

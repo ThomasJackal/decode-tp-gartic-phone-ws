@@ -13,7 +13,18 @@ interface DrawingLine {
   toY: number
 }
 
-type Screen = 'menu' | 'lobby' | 'first-word' | 'drawing' | 'naming'
+interface ThreadStep {
+  type: 'word' | 'drawing' | 'name'
+  author: string
+  content: string | DrawingLine[]
+}
+
+interface ThreadResult {
+  threadId: number
+  steps: ThreadStep[]
+}
+
+type Screen = 'menu' | 'lobby' | 'first-word' | 'drawing' | 'naming' | 'results'
 
 function drawLine(ctx: CanvasRenderingContext2D, line: DrawingLine) {
   ctx.beginPath()
@@ -37,6 +48,9 @@ function getCanvasPoint(canvas: HTMLCanvasElement, clientX: number, clientY: num
 export default function Home() {
   const [screen, setScreen] = useState<Screen>('menu')
   const [inputUsername, setInputUsername] = useState('')
+  const [roomCodeInput, setRoomCodeInput] = useState('')
+  const [roomCode, setRoomCode] = useState('')
+  const [error, setError] = useState('')
   const [username, setUsername] = useState('')
   const [players, setPlayers] = useState<string[]>([])
   const [isHost, setIsHost] = useState(false)
@@ -60,6 +74,11 @@ export default function Home() {
   const colorRef = useRef('#111111')
   const thicknessRef = useRef(4)
   const timerEndRef = useRef(0)
+
+  const [gameEndData, setGameEndData] = useState<{ threads: ThreadResult[] } | null>(null)
+  const [currentResult, setCurrentResult] = useState<{ threadIndex: number; stepIndex: number } | null>(null)
+  const [allShown, setAllShown] = useState(false)
+  const resultsCanvasRef = useRef<HTMLCanvasElement>(null)
 
   useEffect(() => { screenRef.current = screen }, [screen])
 
@@ -91,6 +110,10 @@ export default function Home() {
         const host = data.isHost as boolean
         setPlayers(p)
         setIsHost(host)
+        setGameEndData(null)
+        setCurrentResult(null)
+        setAllShown(false)
+        setError('')
         if (screenRef.current !== 'lobby') setScreen('lobby')
         break
       }
@@ -128,6 +151,34 @@ export default function Home() {
         }
         setScreen('naming')
         startTimer(data.duration as number)
+        break
+      }
+      case 'gameEnd': {
+        const threads = data.threads as ThreadResult[]
+        setGameEndData({ threads })
+        setCurrentResult(null)
+        setAllShown(false)
+        setScreen('results')
+        break
+      }
+      case 'showResult': {
+        setCurrentResult({
+          threadIndex: data.threadIndex as number,
+          stepIndex: data.stepIndex as number,
+        })
+        break
+      }
+      case 'allResultsShown': {
+        setCurrentResult(null)
+        setAllShown(true)
+        break
+      }
+      case 'roomCreated': {
+        setRoomCode(data.roomCode as string)
+        break
+      }
+      case 'error': {
+        setError(data.message as string)
         break
       }
     }
@@ -176,6 +227,7 @@ export default function Home() {
         toX: point.x,
         toY: point.y,
       }
+
       drawLine(ctx, line)
       wsRef.current?.send(JSON.stringify(line))
       lastXRef.current = point.x
@@ -206,13 +258,41 @@ export default function Home() {
     }
   }, [screen, drawingLines])
 
+  useEffect(() => {
+    const canvas = resultsCanvasRef.current
+    if (!canvas || !currentResult || !gameEndData) return
+
+    const step = gameEndData.threads[currentResult.threadIndex].steps[currentResult.stepIndex]
+    if (step.type !== 'drawing') return
+
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height)
+    const lines = step.content as DrawingLine[]
+    for (const line of lines) {
+      drawLine(ctx, line)
+    }
+  }, [currentResult, gameEndData])
+
   useEffect(() => () => clearTimer(), [clearTimer])
 
-  const handleJoin = () => {
+  const handleCreateRoom = () => {
     const name = inputUsername.trim()
     if (!name) return
+    setError('')
     setUsername(name)
-    wsRef.current?.send(JSON.stringify({ type: 'join', username: name }))
+    wsRef.current?.send(JSON.stringify({ type: 'createRoom', username: name }))
+  }
+
+  const handleJoinRoom = () => {
+    const name = inputUsername.trim()
+    const code = roomCodeInput.trim().toUpperCase()
+    if (!name || !code) return
+    setError('')
+    setRoomCode(code)
+    setUsername(name)
+    wsRef.current?.send(JSON.stringify({ type: 'joinRoom', username: name, roomCode: code }))
   }
 
   const handleStartGame = () => {
@@ -229,9 +309,50 @@ export default function Home() {
     setSubmitted(true)
   }
 
+  const handleNextResult = () => {
+    wsRef.current?.send(JSON.stringify({ type: 'nextResult' }))
+  }
+
+  const handleRestartGame = () => {
+    wsRef.current?.send(JSON.stringify({ type: 'restartGame' }))
+  }
+
   const handleNamingChange = (e: ChangeEvent<HTMLInputElement>) => {
     setNamingValue(e.target.value)
     wsRef.current?.send(JSON.stringify({ type: 'naming', username, name: e.target.value }))
+  }
+
+  function renderResultStep(step: ThreadStep, stepIndex: number) {
+    switch (step.type) {
+      case 'word':
+        return (
+          <div className="p-6 bg-gray-50 rounded-lg border text-center">
+            <p className="text-xs text-gray-500 mb-2">Initial word by {step.author}</p>
+            <p className="text-2xl font-bold">{step.content as string}</p>
+          </div>
+        )
+      case 'drawing':
+        return (
+          <div>
+            <p className="text-xs text-gray-500 mb-2">Drawing by {step.author}</p>
+            <div className="w-full max-w-[800px]">
+              <canvas
+                ref={resultsCanvasRef}
+                width={800}
+                height={500}
+                className="block w-full h-auto border border-black"
+              />
+            </div>
+          </div>
+        )
+      case 'name':
+        return (
+          <div className="p-6 bg-gray-50 rounded-lg border text-center">
+            <p className="text-xs text-gray-500 mb-2">Named by {step.author}</p>
+            <p className="text-xl italic">&ldquo;{step.content as string}&rdquo;</p>
+          </div>
+        )
+    }
   }
 
   return (
@@ -244,31 +365,65 @@ export default function Home() {
       {screen === 'menu' && (
         <section>
           <h2 className="text-center mb-4">Menu</h2>
+          {error && <p className="text-red-500 text-sm mb-2">{error}</p>}
           <label className="block mb-2">
             Username{' '}
             <input
               type="text"
               value={inputUsername}
               onChange={(e) => setInputUsername(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleJoin()}
-              placeholder="thomas"
+              placeholder="your name"
               className="border border-gray-300 px-2 py-1"
             />
           </label>
-          <p>
-            <button
-              onClick={handleJoin}
-              className="px-3 py-1.5 bg-blue-500 text-white rounded cursor-pointer"
-            >
-              Join
-            </button>
-          </p>
+          <div className="flex gap-4 items-end">
+            <div>
+              <p>
+                <button
+                  onClick={handleCreateRoom}
+                  className="px-3 py-1.5 bg-violet-500 text-white rounded cursor-pointer"
+                >
+                  Create Room
+                </button>
+              </p>
+            </div>
+            <div className="flex gap-2 items-end">
+              <label>
+                Room code{' '}
+                <input
+                  type="text"
+                  value={roomCodeInput}
+                  onChange={(e) => setRoomCodeInput(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleJoinRoom()}
+                  placeholder="ABC123"
+                  className="border border-gray-300 px-2 py-1 w-24 uppercase"
+                />
+              </label>
+              <p>
+                <button
+                  onClick={handleJoinRoom}
+                  className="px-3 py-1.5 bg-blue-500 text-white rounded cursor-pointer"
+                >
+                  Join
+                </button>
+              </p>
+            </div>
+          </div>
         </section>
       )}
 
       {screen === 'lobby' && (
         <section>
           <h2 className="text-center mb-4">Lobby</h2>
+          <p className="mb-2 text-sm">
+            Room: <strong>{roomCode}</strong>
+            <button
+              onClick={() => navigator.clipboard?.writeText(roomCode)}
+              className="ml-2 text-xs text-blue-500 underline cursor-pointer"
+            >
+              Copy
+            </button>
+          </p>
           <ul id="playersList" className="list-disc pl-5 mb-4">
             {players.map((name, i) => <li key={i}>{name}</li>)}
           </ul>
@@ -379,6 +534,75 @@ export default function Home() {
               className="block w-full h-auto border border-black"
             />
           </div>
+        </section>
+      )}
+
+      {screen === 'results' && gameEndData && (
+        <section>
+          <h2 className="mb-4">Results</h2>
+
+          {currentResult && (
+            <div>
+              <p className="mb-2 text-sm text-gray-500">
+                Thread {currentResult.threadIndex + 1} / {gameEndData.threads.length}
+                &nbsp;&mdash;&nbsp;
+                Step {currentResult.stepIndex + 1} / {gameEndData.threads[currentResult.threadIndex].steps.length}
+              </p>
+
+              {renderResultStep(
+                gameEndData.threads[currentResult.threadIndex].steps[currentResult.stepIndex],
+                currentResult.stepIndex,
+              )}
+
+              {isHost && (
+                <p className="mt-4">
+                  <button
+                    onClick={handleNextResult}
+                    className="px-4 py-2 bg-green-500 text-white rounded cursor-pointer"
+                  >
+                    Next
+                  </button>
+                </p>
+              )}
+              {!isHost && (
+                <p className="mt-4 text-sm text-gray-500">Waiting for host to continue...</p>
+              )}
+            </div>
+          )}
+
+          {!currentResult && !allShown && (
+            <div>
+              {isHost ? (
+                <p className="mt-4">
+                  <button
+                    onClick={handleNextResult}
+                    className="px-4 py-2 bg-green-500 text-white rounded cursor-pointer"
+                  >
+                    Start viewing results
+                  </button>
+                </p>
+              ) : (
+                <p>Waiting for host to start viewing results...</p>
+              )}
+            </div>
+          )}
+
+          {allShown && (
+            <div className="text-center">
+              <p className="text-lg mb-4">All results shown!</p>
+              {isHost && (
+                <button
+                  onClick={handleRestartGame}
+                  className="px-4 py-2 bg-blue-500 text-white rounded cursor-pointer"
+                >
+                  Play Again
+                </button>
+              )}
+              {!isHost && (
+                <p className="text-sm text-gray-500">Waiting for host to start a new game...</p>
+              )}
+            </div>
+          )}
         </section>
       )}
     </main>

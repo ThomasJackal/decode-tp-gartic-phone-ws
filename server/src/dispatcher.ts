@@ -1,86 +1,139 @@
 import type { WSContext } from "hono/ws";
-import { Game, Player } from "./game.js";
-import { game, setGame } from "./index.js";
+import { Player } from "./game.js";
+import { gameRepository } from "./GameRepository.js";
+import { rateLimiter } from "./rateLimiter.js";
+import {
+    validate,
+    UsernameSchema,
+    WordSchema,
+    RoomCodeSchema,
+    DrawingEventSchema,
+    NamingEventSchema,
+} from "./validation.js";
 
-interface GameEvent {
-    type: string;
-}
-
-interface JoinEvent extends GameEvent {
-    type: "join";
-    username: string;
-}
-
-// Player events
-export interface DrawingEvent extends GameEvent {
+export interface DrawingEvent {
     type: "drawing";
-    username: string;
+    username?: string;
     color: string;
     thickness: number;
     fromX: number;
     fromY: number;
+    toX: number;
+    toY: number;
 }
 
-export interface NamingEvent extends GameEvent {
+export interface NamingEvent {
     type: "naming";
-    username: string;
+    username?: string;
     name: string;
 }
 
-// Host events
-interface NewGameEvent extends GameEvent {
-    type: "newGame";
-    hostUsername: string;
+function sendError(ws: any, message: string): void {
+    try {
+        ws.send(JSON.stringify({ type: "error", message }));
+    } catch {
+    }
 }
 
-interface StartGameEvent extends GameEvent {
-    type: "startGame";
+function getWsKey(ws: any): string {
+    try {
+        return JSON.stringify(ws).slice(0, 20);
+    } catch {
+        return String(Math.random());
+    }
 }
 
-interface ThreadReadyEvent extends GameEvent {
-    type: "threadReady";
-    threadId: number;
-    initialWord: string;
+function isHost(game: any, ws: any): boolean {
+    return game.players[0]?.ws === ws;
 }
 
 export default function dispatch(payload: any, ws: any = null) {
     switch (payload.type) {
 
-        case "join": {
-            const joinEvent = payload as JoinEvent;
-            const player = new Player(joinEvent.username, ws as WSContext<WebSocket>);
-            if (!game) {
-                setGame(new Game("1", player));
-            } else {
-                game.join(player);
+        case "createRoom": {
+            const v = validate(UsernameSchema, payload.username);
+            if (!v.ok) { sendError(ws, v.error); return; }
+
+            const player = new Player(v.data, ws as WSContext<WebSocket>);
+            const roomCode = gameRepository.createRoom(player);
+            ws.send(JSON.stringify({ type: "roomCreated", roomCode }));
+            break;
+        }
+        case "joinRoom": {
+            const vu = validate(UsernameSchema, payload.username);
+            if (!vu.ok) { sendError(ws, vu.error); return; }
+
+            const vc = validate(RoomCodeSchema, payload.roomCode?.toUpperCase());
+            if (!vc.ok) { sendError(ws, vc.error); return; }
+
+            const player = new Player(vu.data, ws as WSContext<WebSocket>);
+            const success = gameRepository.joinRoom(vc.data, player);
+            if (!success) {
+                sendError(ws, "Room not found");
             }
             break;
         }
-        case "leave": {
-            const player = game?.players.find(p => p.ws === ws);
-            if (player) {
-                game?.leave(player);
+        case "leave":
+            gameRepository.removePlayer(ws);
+            break;
+        case "drawing": {
+            const v = validate(DrawingEventSchema, payload);
+            if (!v.ok) { sendError(ws, v.error); return; }
+
+            const game = gameRepository.getGameByWs(ws);
+            if (!game) return;
+
+            if (!rateLimiter.checkDrawing(getWsKey(ws))) {
+                sendError(ws, "Too many drawing events");
+                return;
             }
-            if (game?.players.length === 0) {
-                console.log("Game " + game?.gameId + " destroyed");
-                setGame(null);
-            }
+
+            game.registerDrawingEvent(v.data, ws as WSContext<WebSocket>);
             break;
         }
-        case "drawing":
-            const drawingEvent = payload as DrawingEvent;
-            game?.registerDrawingEvent(drawingEvent, ws as WSContext<WebSocket>);
+        case "naming": {
+            const v = validate(NamingEventSchema, payload);
+            if (!v.ok) { sendError(ws, v.error); return; }
+
+            const game = gameRepository.getGameByWs(ws);
+            if (!game) return;
+
+            if (!rateLimiter.checkNaming(getWsKey(ws))) {
+                sendError(ws, "Too many naming events");
+                return;
+            }
+
+            game.registerNamingEvent(v.data, ws as WSContext<WebSocket>);
             break;
-        case "naming":
-            const namingEvent = payload as NamingEvent;
-            game?.registerNamingEvent(namingEvent, ws as WSContext<WebSocket>);
+        }
+        case "startGame": {
+            const game = gameRepository.getGameByWs(ws);
+            if (!game) return;
+            if (!isHost(game, ws)) { sendError(ws, "Only the host can start the game"); return; }
+            game.initializeGame();
             break;
-        case "startGame":
-            game?.initializeGame();
-            break;
+        }
         case "threadReady": {
-            const threadReadyEvent = payload as ThreadReadyEvent;
-            game?.threadReady(threadReadyEvent.threadId, threadReadyEvent.initialWord);
+            const v = validate(WordSchema, payload.initialWord);
+            if (!v.ok) { sendError(ws, v.error); return; }
+
+            const game = gameRepository.getGameByWs(ws);
+            if (!game) return;
+            game.threadReady(payload.threadId, v.data);
+            break;
+        }
+        case "nextResult": {
+            const game = gameRepository.getGameByWs(ws);
+            if (!game) return;
+            if (!isHost(game, ws)) { sendError(ws, "Only the host can advance results"); return; }
+            game.nextResult();
+            break;
+        }
+        case "restartGame": {
+            const game = gameRepository.getGameByWs(ws);
+            if (!game) return;
+            if (!isHost(game, ws)) { sendError(ws, "Only the host can restart"); return; }
+            game.restartGame();
             break;
         }
     }

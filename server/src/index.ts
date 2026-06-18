@@ -1,16 +1,9 @@
 import { serve, upgradeWebSocket } from "@hono/node-server";
 import { Hono } from "hono";
 import { WebSocketServer } from "ws";
-import { Game } from "./game.js";
 import dispatch from "./dispatcher.js";
 
 const app = new Hono();
-
-export let game: Game | null = null;
-
-export function setGame(nextGame: Game | null) {
-  game = nextGame;
-}
 
 app.get(
   "/ws",
@@ -36,7 +29,7 @@ app.get(
   }),
 );
 
-export const wss = new WebSocketServer({ noServer: true });
+const wss = new WebSocketServer({ noServer: true });
 
 serve(
   {
